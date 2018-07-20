@@ -8,6 +8,8 @@
 #import "ViewController.h"
 #import <OpenTok/OpenTok.h>
 
+#import "Reachability.h"
+
 // *** Fill the following variables using your own Project info  ***
 // ***          https://dashboard.tokbox.com/projects            ***
 // Replace with your OpenTok API key
@@ -17,10 +19,12 @@ static NSString* const kSessionId = @"";
 // Replace with your generated token
 static NSString* const kToken = @"";
 
-@interface ViewController ()<OTSessionDelegate, OTSubscriberDelegate, OTPublisherDelegate>
+@interface ViewController ()<OTSessionDelegate, OTSubscriberDelegate, OTPublisherDelegate, OTSubscriberKitDelegate>
 @property (nonatomic) OTSession *session;
 @property (nonatomic) OTPublisher *publisher;
 @property (nonatomic) OTSubscriber *subscriber;
+
+@property (nonatomic, strong) Reachability *conn;
 @end
 
 @implementation ViewController
@@ -39,6 +43,47 @@ static double widgetWidth = 320;
                                        sessionId:kSessionId
                                         delegate:self];
     [self doConnect];
+    
+    [self startReachability];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+#pragma mark - Net status
+- (void)startReachability {
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(networkStateChange:) name:kReachabilityChangedNotification object:nil];
+    // start checking for reachability of the network
+    self.conn = [Reachability reachabilityForInternetConnection];
+    [self.conn startNotifier];
+}
+
+- (void)networkStateChange:(NSNotification *)note {
+    Reachability *curReach = [note object];
+    NetworkStatus status = [curReach currentReachabilityStatus];
+    if (status == NotReachable) {
+        NSLog(@"*** not reachable");
+    } else {
+        NSLog(@"*** reachable, try to download data...");
+        [self verifyNetStatus];
+    }
+}
+
+- (void)verifyNetStatus {
+    dispatch_queue_t globalQueue = dispatch_get_global_queue(0, 0);
+    dispatch_async(globalQueue, ^{
+        NSString *imageStr = @"https://tokbox.com/developer/img/OT_logo.png";
+        NSURL *imageURL = [NSURL URLWithString:imageStr];
+        NSData *imageData = [NSData dataWithContentsOfURL:imageURL];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSLog(@"*** download data successful, length = %ld", imageData.length);
+        });
+    });
+}
+
+- (IBAction)changePublishVideo:(id)sender {
+    self.publisher.publishVideo = !self.publisher.publishVideo;
 }
 
 - (BOOL)prefersStatusBarHidden
@@ -107,7 +152,6 @@ static double widgetWidth = 320;
 - (void)doSubscribe:(OTStream*)stream
 {
     _subscriber = [[OTSubscriber alloc] initWithStream:stream delegate:self];
-    
     OTError *error = nil;
     [_session subscribe:_subscriber error:&error];
     if (error)
@@ -130,6 +174,12 @@ static double widgetWidth = 320;
 
 # pragma mark - OTSession delegate callbacks
 
+- (void)sessionDidBeginReconnecting:(nonnull OTSession*)session {
+    NSLog(@"sessionDidBeginReconnecting (%@)", session.sessionId);
+}
+- (void)sessionDidReconnect:(nonnull OTSession*)session {
+    NSLog(@"sessionDidReconnect (%@)", session.sessionId);
+}
 - (void)sessionDidConnect:(OTSession*)session
 {
     NSLog(@"sessionDidConnect (%@)", session.sessionId);
@@ -191,6 +241,7 @@ connectionDestroyed:(OTConnection *)connection
 didFailWithError:(OTError*)error
 {
     NSLog(@"didFailWithError: (%@)", error);
+    [self showAlert:error.description];
 }
 
 # pragma mark - OTSubscriber delegate callbacks
@@ -238,6 +289,17 @@ didFailWithError:(OTError*)error
     NSLog(@"publisher didFailWithError %@", error);
     [self cleanupPublisher];
 }
+
+#pragma mark - OTSubscriberKit delegate callbacks
+- (void)subscriberVideoDisabled:(OTSubscriberKit*)subscriber reason:(OTSubscriberVideoEventReason)reason {
+    NSLog(@"subscriberVideoDisabled streamId:%@ reason:%d", subscriber.stream.streamId, reason);
+}
+
+- (void)subscriberVideoEnabled:(OTSubscriberKit*)subscriber
+                        reason:(OTSubscriberVideoEventReason)reason {
+    NSLog(@"subscriberVideoEnabled streamId:%@ reason:%d", subscriber.stream.streamId, reason);
+}
+
 
 - (void)showAlert:(NSString *)string
 {

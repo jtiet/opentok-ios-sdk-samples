@@ -1,8 +1,10 @@
 platform :ios, '9.0'
 use_frameworks!
 
-require_relative '../OpenTokSDKVersion'
+#require_relative '../OpenTokSDKVersion'
+
 
 target 'Basic-Video-Chat' do
-  pod 'OpenTok', OpenTokSDKVersion
+  pod 'OpenTok', '2.14.1'
+  pod 'Reachability'
 end
